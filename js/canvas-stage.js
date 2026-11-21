@@ -855,10 +855,11 @@ export class CanvasStage {
   _bindCanvasPointerEvents() {
     this.canvas.addEventListener('pointerdown', (e) => {
       const pt = this._clientToCanvas(e);
+      const isTouch = e.pointerType === 'touch';
       if (store.ui.cropMode && store.ui.selected?.type === 'v1') {
         const clip = store.getSelectedItem();
         if (!clip) return;
-        const handle = this._hitTestCrop(pt, clip);
+        const handle = this._hitTestCrop(pt, clip, isTouch);
         if (handle) {
           store.pushHistory();
           this._dragState = {
@@ -881,7 +882,7 @@ export class CanvasStage {
       if (store.ui.selected?.type === 'v2') {
         const selOv = visible.find(o => o.id === store.ui.selected.id);
         if (selOv) {
-          const hit = this._hitTestOverlay(pt, selOv);
+          const hit = this._hitTestOverlay(pt, selOv, isTouch);
           if (hit) {
             store.pushHistory();
             this._dragState = {
@@ -900,7 +901,7 @@ export class CanvasStage {
       // Otherwise hit-test any visible overlay (topmost first)
       for (let i = visible.length - 1; i >= 0; i--) {
         const ov = visible[i];
-        const hit = this._hitTestOverlay(pt, ov);
+        const hit = this._hitTestOverlay(pt, ov, isTouch);
         if (hit) {
           store.select('v2', ov.id);
           store.pushHistory();
@@ -977,7 +978,7 @@ export class CanvasStage {
     this.canvas.addEventListener('pointercancel', endDrag);
   }
 
-  _hitTestOverlay(pt, ov) {
+  _hitTestOverlay(pt, ov, isTouch = false) {
     const cx = ov.x * pt.W;
     const cy = ov.y * pt.H;
     const bw = ov.w * pt.W;
@@ -988,9 +989,11 @@ export class CanvasStage {
     // Transform into local unrotated box coords
     const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
     const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
+    const handleRad = isTouch ? 28 : 14;
+    const pad = isTouch ? 10 : 0;
 
     // Rotation handle
-    if (Math.hypot(lx, ly - (-bh / 2 - 24)) <= 14) return 'rotate';
+    if (Math.hypot(lx, ly - (-bh / 2 - 24)) <= handleRad) return 'rotate';
 
     // Corner resize handles
     const corners = [
@@ -998,20 +1001,20 @@ export class CanvasStage {
       [bw / 2, bh / 2], [-bw / 2, bh / 2],
     ];
     for (const [hx, hy] of corners) {
-      if (Math.hypot(lx - hx, ly - hy) <= 14) return 'resize';
+      if (Math.hypot(lx - hx, ly - hy) <= handleRad) return 'resize';
     }
 
-    if (Math.abs(lx) <= bw / 2 && Math.abs(ly) <= bh / 2) return 'move';
+    if (Math.abs(lx) <= bw / 2 + pad && Math.abs(ly) <= bh / 2 + pad) return 'move';
     return null;
   }
 
-  _hitTestCrop(pt, clip) {
+  _hitTestCrop(pt, clip, isTouch = false) {
     const c = clip.crop || { x: 0, y: 0, w: 1, h: 1 };
     const x1 = c.x * pt.W;
     const y1 = c.y * pt.H;
     const x2 = (c.x + c.w) * pt.W;
     const y2 = (c.y + c.h) * pt.H;
-    const tol = 16;
+    const tol = isTouch ? 30 : 16;
 
     const nearL = Math.abs(pt.x - x1) <= tol;
     const nearR = Math.abs(pt.x - x2) <= tol;

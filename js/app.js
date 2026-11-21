@@ -465,7 +465,25 @@ function deleteSelected() {
 /* ============================================================================
  * UI Sync (Inspector, Media Bin, Buttons)
  * ============================================================================ */
-function switchTab(tabName) {
+const TAB_TITLES = {
+  canvas: 'Canvas & Layout',
+  clip: 'Clip & Transform',
+  overlays: 'Overlays & Captions',
+  audio: 'Audio & SFX',
+  filters: 'Filters & Presets',
+};
+
+function isMobileLayout() {
+  return window.innerWidth <= 768;
+}
+
+function setMobileDrawer(open) {
+  const panel = $('inspectorPanel');
+  if (!panel) return;
+  panel.classList.toggle('mobile-open', !!open && isMobileLayout());
+}
+
+function switchTab(tabName, { openDrawer = false } = {}) {
   store.ui.activeTab = tabName;
   document.querySelectorAll('.tab-btn').forEach(btn => {
     const active = btn.dataset.tab === tabName;
@@ -475,6 +493,9 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-pane').forEach(pane => {
     pane.classList.toggle('active', pane.id === `pane-${tabName}`);
   });
+  const titleEl = $('mobileDrawerTitle');
+  if (titleEl) titleEl.textContent = TAB_TITLES[tabName] || tabName;
+  if (openDrawer && isMobileLayout()) setMobileDrawer(true);
 }
 
 function syncUI(reason) {
@@ -712,6 +733,7 @@ function escapeHtml(s) {
  * ============================================================================ */
 function openExportModal() {
   setPlaying(false);
+  setMobileDrawer(false);
   $('exportModal').classList.remove('hidden');
   $('exportConfigView').classList.remove('hidden');
   $('exportProgressView').classList.add('hidden');
@@ -873,10 +895,25 @@ async function runExport() {
 function wireEvents() {
   store.subscribe((reason) => syncUI(reason));
 
-  // Tabs
+  // Tabs (Desktop switch / Mobile Bottom Sheet toggle)
   document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    btn.addEventListener('click', () => {
+      const targetTab = btn.dataset.tab;
+      if (isMobileLayout()) {
+        const panel = $('inspectorPanel');
+        const isOpen = panel.classList.contains('mobile-open');
+        if (isOpen && store.ui.activeTab === targetTab) {
+          setMobileDrawer(false);
+        } else {
+          switchTab(targetTab, { openDrawer: true });
+        }
+      } else {
+        switchTab(targetTab);
+      }
+    });
   });
+
+  $('btnCloseMobileDrawer').addEventListener('click', () => setMobileDrawer(false));
 
   // Top Bar
   $('btnImportMedia').addEventListener('click', () => $('fileInputMedia').click());
@@ -1008,6 +1045,7 @@ function wireEvents() {
   $('btnToggleCropMode').addEventListener('click', () => {
     if (store.ui.selected?.type !== 'v1') return;
     store.ui.cropMode = !store.ui.cropMode;
+    if (store.ui.cropMode && isMobileLayout()) setMobileDrawer(false);
     store.emit('crop-mode');
   });
   $('btnDoneCrop').addEventListener('click', () => {
@@ -1411,6 +1449,7 @@ function wireEvents() {
   });
 
   window.addEventListener('resize', () => {
+    if (!isMobileLayout()) setMobileDrawer(false);
     timeline.render();
     stage.render();
   });

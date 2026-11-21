@@ -104,7 +104,7 @@ export class TimelineController {
   _renderRuler(widthPx) {
     const canvas = this.rulerCanvas;
     const dpr = window.devicePixelRatio || 1;
-    const h = 28;
+    const h = window.innerWidth <= 768 ? 24 : 28;
     if (canvas.width !== Math.round(widthPx * dpr) || canvas.height !== Math.round(h * dpr)) {
       canvas.width = Math.round(widthPx * dpr);
       canvas.height = Math.round(h * dpr);
@@ -378,7 +378,6 @@ export class TimelineController {
       const item = store.getSelectedItem();
       if (!item) return;
 
-      store.pushHistory();
       const mode = handleEl ? (handleEl.dataset.handle === 'left' ? 'trim-left' : 'trim-right') : 'move';
 
       this._dragOp = {
@@ -388,6 +387,7 @@ export class TimelineController {
         item,
         startX: e.clientX,
         startY: e.clientY,
+        started: false,
         origStartTime: item.startTime,
         origEndTime: item.endTime,
         origTrimStart: item.trimStart || 0,
@@ -400,6 +400,11 @@ export class TimelineController {
     this.trackArea.addEventListener('pointermove', (e) => {
       if (!this._dragOp) return;
       const op = this._dragOp;
+      if (!op.started) {
+        if (Math.abs(e.clientX - op.startX) < 5 && Math.abs(e.clientY - op.startY) < 5) return;
+        op.started = true;
+        store.pushHistory();
+      }
       const dt = (e.clientX - op.startX) / this.pxPerSec();
       const item = op.item;
 
@@ -486,9 +491,10 @@ export class TimelineController {
 
     const endDrag = () => {
       if (!this._dragOp) return;
+      const didMove = this._dragOp.started;
       this._dragOp = null;
       this._showSnapGuide(null);
-      store.emit('timeline-change');
+      if (didMove) store.emit('timeline-change');
     };
     this.trackArea.addEventListener('pointerup', endDrag);
     this.trackArea.addEventListener('pointercancel', endDrag);
