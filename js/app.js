@@ -74,7 +74,7 @@ function startPlaybackLoop() {
         stage.syncVideos(store.ui.currentTime, store.ui.isPlaying);
         audioEngine.syncAudioTracks(store.ui.currentTime, store.ui.isPlaying);
         updateTimecodeDisplay();
-        timeline.updatePlayhead();
+        timeline.updatePlayhead(true);
       }
     }
 
@@ -104,13 +104,13 @@ function setPlaying(flag) {
   $('iconPause').classList.toggle('hidden', !flag);
 }
 
-function seekTo(t) {
+function seekTo(t, autoFollow = false) {
   const total = Math.max(0, store.getTotalDuration());
   store.ui.currentTime = clamp(t, 0, Math.max(total, 0.001));
   stage.syncVideos(store.ui.currentTime, store.ui.isPlaying);
   audioEngine.syncAudioTracks(store.ui.currentTime, store.ui.isPlaying);
   stage.render(store.ui.currentTime);
-  timeline.updatePlayhead();
+  timeline.updatePlayhead(autoFollow);
   updateTimecodeDisplay();
 }
 
@@ -118,15 +118,24 @@ function stepFrames(delta) {
   setPlaying(false);
   const primary = store.getPrimaryVideoAsset();
   const fps = primary?.fps ? clamp(Math.round(primary.fps), 24, 60) : 30;
-  seekTo(store.ui.currentTime + delta / fps);
+  seekTo(store.ui.currentTime + delta / fps, true);
 }
 
 function updateTimecodeDisplay() {
+  const totalDur = store.getTotalDuration();
   const cur = formatTimecode(store.ui.currentTime);
-  const tot = formatTimecode(store.getTotalDuration());
+  const tot = formatTimecode(totalDur);
   $('timecodeCurrent').textContent = cur;
   $('timecodeTotal').textContent = tot;
   $('projectTelemetry').textContent = tot;
+
+  const scrub = $('quickScrubBar');
+  if (scrub && document.activeElement !== scrub) {
+    const pct = totalDur > 0 ? clamp(Math.round((store.ui.currentTime / totalDur) * 1000), 0, 1000) : 0;
+    scrub.value = String(pct);
+    scrub.style.setProperty('--scrub-pct', `${pct / 10}%`);
+    scrub.disabled = totalDur <= 0;
+  }
 
   const dims = store.getCanvasDimensions();
   const hasMedia = store.project.v1Clips.length > 0 || store.project.audioClips.length > 0;
@@ -198,6 +207,12 @@ async function handleImportFiles(files, mode = 'auto') {
         store.project.v1Clips.push(clip);
         store.repackV1(store.ui.ripple);
         store.select('v1', clip.id);
+        if (store.project.v1Clips.length === 1 && isMobileLayout()) {
+          const total = Math.max(2, store.getTotalDuration());
+          const availW = Math.max(260, ($('timelineScroll')?.clientWidth || 320) - 36);
+          store.ui.zoom = clamp(Math.round(availW / total), 24, 140);
+          $('inputTimelineZoom').value = String(store.ui.zoom);
+        }
       }
 
       store.emit('import');
@@ -296,6 +311,91 @@ function splitAtPlayhead() {
     store.select('audio', right.id);
     store.emit('split');
     toast('Split audio clip', 'success', 1400);
+  }
+}
+
+function trimSelectedToPlayhead(side) {
+  const t = store.ui.currentTime;
+  let sel = store.ui.selected;
+  let item = store.getSelectedItem();
+
+  if (!item) {
+    const v1Under = store.project.v1Clips.find(c => t >= c.startTime && t <= c.startTime + store.getClipDuration(c));
+    if (v1Under) {
+      store.select('v1', v1Under.id);
+      sel = store.ui.selected;
+      item = v1Under;
+    }
+  }
+  if (!sel || !item) {
+    toast('Select a clip first', 'info');
+    return;
+  }
+
+  if (sel.type === 'v1') {
+    const dur = store.getClipDuration(item);
+    const endT = item.startTime + dur;
+    if (t <= item.startTime + 0.08 || t >= endT - 0.08) {
+      toast('Move playhead inside the clip to trim', 'info');
+      return;
+    }
+    store.pushHistory();
+    const speed = item.speed || 1;
+    if (side === 'left') {
+      const cutDur = t - item.startTime;
+      if (item.kind === 'image' || item.kind === 'freeze') {
+        item.duration = Math.max(0.2, dur - cutDur);
+      } else {
+        item.trimStart = (item.trimStart || 0) + cutDur * speed;
+      }
+      if (!store.ui.ripple) item.startTime = t;
+      else store.repackV1(true);
+    } else {
+      const keepDur = t - item.startTime;
+      if (item.kind === 'image' || item.kind === 'freeze') {
+        item.duration = Math.max(0.2, keepDur);
+      } else {
+        item.trimEnd = Math.min(item.sourceDuration, (item.trimStart || 0) + keepDur * speed);
+      }
+      if (store.ui.ripple) store.repackV1(true);
+    }
+    store.emit('trim');
+    toast(side === 'left' ? 'Trimmed start to playhead' : 'Trimmed end to playhead', 'success', 1400);
+    return;
+  }
+
+  if (sel.type === 'v2') {
+    if (t <= item.startTime + 0.08 || t >= item.endTime - 0.08) {
+      toast('Move playhead inside the overlay to trim', 'info');
+      return;
+    }
+    store.pushHistory();
+    if (side === 'left') item.startTime = t;
+    else item.endTime = t;
+    store.emit('trim');
+    toast(side === 'left' ? 'Trimmed overlay start' : 'Trimmed overlay end', 'success', 1400);
+    return;
+  }
+
+  if (sel.type === 'audio') {
+    const dur = store.getClipDuration(item);
+    const endT = item.startTime + dur;
+    if (t <= item.startTime + 0.08 || t >= endT - 0.08) {
+      toast('Move playhead inside the audio clip to trim', 'info');
+      return;
+    }
+    store.pushHistory();
+    const speed = item.speed || 1;
+    if (side === 'left') {
+      const cutDur = t - item.startTime;
+      item.trimStart = (item.trimStart || 0) + cutDur * speed;
+      item.startTime = t;
+    } else {
+      const keepDur = t - item.startTime;
+      item.trimEnd = Math.min(item.sourceDuration, (item.trimStart || 0) + keepDur * speed);
+    }
+    store.emit('trim');
+    toast(side === 'left' ? 'Trimmed audio start' : 'Trimmed audio end', 'success', 1400);
   }
 }
 
@@ -528,6 +628,12 @@ function syncUI(reason) {
   document.querySelectorAll('#memeThemeGroup .chip').forEach(b => {
     b.classList.toggle('active', b.dataset.memeTheme === mb.theme);
   });
+
+  if (reason === 'timeline-drag') {
+    updateTimecodeDisplay();
+    stage.render(store.ui.currentTime);
+    return;
+  }
 
   syncMediaBin();
   syncSelectedInspectors();
@@ -947,6 +1053,15 @@ function wireEvents() {
     if (e.dataTransfer?.files?.length) handleImportFiles(e.dataTransfer.files, 'auto');
   });
 
+  // Quick Full-Width Scrubber
+  $('quickScrubBar').addEventListener('input', (e) => {
+    const total = store.getTotalDuration();
+    if (total <= 0) return;
+    const val = Number(e.target.value);
+    e.target.style.setProperty('--scrub-pct', `${val / 10}%`);
+    seekTo((val / 1000) * total, true);
+  });
+
   // Playback Controls
   $('btnPlayPause').addEventListener('click', () => setPlaying(!store.ui.isPlaying));
   $('btnStepBack').addEventListener('click', () => stepFrames(-1));
@@ -1278,6 +1393,8 @@ function wireEvents() {
 
   // Timeline Toolbar
   $('btnTlSplit').addEventListener('click', splitAtPlayhead);
+  $('btnTlTrimLeft').addEventListener('click', () => trimSelectedToPlayhead('left'));
+  $('btnTlTrimRight').addEventListener('click', () => trimSelectedToPlayhead('right'));
   $('btnTlFreeze').addEventListener('click', insertFreezeFrame);
   $('btnTlDuplicate').addEventListener('click', duplicateSelected);
   $('btnTlDetach').addEventListener('click', () => {
