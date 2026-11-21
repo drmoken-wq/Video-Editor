@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PulseCut — Local Video Studio</title>
+  <meta name="theme-color" content="#0b1120" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%236366f1'/%3E%3Cstop offset='55%25' stop-color='%2322d3ee'/%3E%3Cstop offset='100%25' stop-color='%2310b981'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='%230b1120'/%3E%3Crect x='3' y='3' width='58' height='58' rx='13' fill='none' stroke='url(%23g)' stroke-width='3'/%3E%3Cpath d='M36 10L17 36h13l-2 18 19-26H34l2-18z' fill='url(%23g)'/%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%236366f1'/%3E%3Cstop offset='55%25' stop-color='%2322d3ee'/%3E%3Cstop offset='100%25' stop-color='%2310b981'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='180' height='180' rx='40' fill='%230b1120'/%3E%3Cpath d='M102 26L46 102h38l-6 52 56-76H96l6-52z' fill='url(%23g)'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Cairo:wght@600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- Hidden unrestricted file inputs (no restrictive accept attribute) -->
+  <input type="file" id="fileInputMedia" multiple hidden />
+  <input type="file" id="fileInputOverlayImage" hidden />
+  <input type="file" id="fileInputOverlayVideo" hidden />
+  <input type="file" id="fileInputAudio" multiple hidden />
+
+  <div class="app-shell">
+    <!-- TOP BAR -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <svg class="brand-icon" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
+            <defs>
+              <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#6366f1" />
+                <stop offset="55%" stop-color="#22d3ee" />
+                <stop offset="100%" stop-color="#10b981" />
+              </linearGradient>
+            </defs>
+            <rect width="32" height="32" rx="8" fill="#111827" stroke="url(#brandGrad)" stroke-width="1.5" />
+            <path d="M18.5 5.5L8.5 18h6.5l-1.5 8.5 10-12.5H17l1.5-8.5z" fill="url(#brandGrad)" />
+          </svg>
+          <span class="brand-title">PulseCut</span>
+        </div>
+        <span class="local-pill" title="100% client-side processing">
+          <span class="local-dot"></span>
+          Local
+        </span>
+      </div>
+
+      <div class="topbar-center">
+        <button class="btn btn-ghost btn-sm" id="btnImportMedia" title="Import video, image, or audio">
+          <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3v10m0-10L6.5 6.5M10 3l3.5 3.5M3 14v1.5A1.5 1.5 0 004.5 17h11a1.5 1.5 0 001.5-1.5V14"/></svg>
+          Import
+        </button>
+        <button class="btn btn-ghost btn-sm" id="btnNewProject" title="Clear project">New</button>
+        <div class="v-sep"></div>
+        <button class="btn btn-icon" id="btnUndo" title="Undo (Ctrl+Z)" disabled>
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6.5 7.5H3V4m0 3.5a7 7 0 112.1 5.5"/></svg>
+        </button>
+        <button class="btn btn-icon" id="btnRedo" title="Redo (Ctrl+Y)" disabled>
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13.5 7.5H17V4m0 3.5a7 7 0 10-2.1 5.5"/></svg>
+        </button>
+      </div>
+
+      <div class="topbar-right">
+        <div class="project-telemetry" id="projectTelemetry">00:00.00</div>
+        <button class="btn btn-export" id="btnOpenExport" disabled>
+          <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13V3m0 10l-3.5-3.5M10 13l3.5-3.5M3 14.5V16a1 1 0 001 1h12a1 1 0 001-1v-1.5"/></svg>
+          Export
+        </button>
+      </div>
+    </header>
+
+    <!-- MAIN WORKSPACE -->
+    <main class="workspace">
+      <!-- LEFT INSPECTOR / TOOLS PANEL -->
+      <aside class="inspector-panel">
+        <nav class="inspector-tabs" role="tablist">
+          <button class="tab-btn active" data-tab="canvas" role="tab" aria-selected="true">Canvas</button>
+          <button class="tab-btn" data-tab="clip" role="tab">Clip</button>
+          <button class="tab-btn" data-tab="overlays" role="tab">Overlays</button>
+          <button class="tab-btn" data-tab="audio" role="tab">Audio</button>
+          <button class="tab-btn" data-tab="filters" role="tab">Filters</button>
+        </nav>
+
+        <div class="inspector-body">
+          <!-- TAB: CANVAS -->
+          <section class="tab-pane active" id="pane-canvas">
+            <div class="control-group">
+              <label class="group-label">Aspect Ratio</label>
+              <div class="chip-grid cols-5" id="aspectPresetGroup">
+                <button class="chip active" data-aspect="original">Orig</button>
+                <button class="chip" data-aspect="9:16">9:16</button>
+                <button class="chip" data-aspect="16:9">16:9</button>
+                <button class="chip" data-aspect="1:1">1:1</button>
+                <button class="chip" data-aspect="4:5">4:5</button>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label class="group-label">Fit & Background</label>
+              <div class="chip-grid cols-2" id="bgModeGroup">
+                <button class="chip active" data-bg="blur">Blur BG</button>
+                <button class="chip" data-bg="solid">Solid Color</button>
+                <button class="chip" data-bg="fill">Fill / Zoom</button>
+                <button class="chip" data-bg="meme-bar">Meme Top Bar</button>
+              </div>
+            </div>
+
+            <div class="control-group hidden" id="solidBgControls">
+              <label class="group-label">Background Color</label>
+              <div class="inline-row">
+                <button class="swatch" data-color="#000000" style="background:#000000" title="Black"></button>
+                <button class="swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
+                <button class="swatch" data-color="#0b1120" style="background:#0b1120" title="Slate"></button>
+                <input type="color" id="inputBgColor" value="#000000" class="color-picker" />
+              </div>
+            </div>
+
+            <div class="control-group hidden" id="memeBarControls">
+              <label class="group-label">Meme Header Bar</label>
+              <textarea id="inputMemeCaption" class="text-input" rows="2" placeholder="Write caption (English or عربي)..."></textarea>
+              <div class="inline-row mt-8">
+                <div class="chip-grid cols-2 flex-1" id="memeThemeGroup">
+                  <button class="chip active" data-meme-theme="light">White Bar</button>
+                  <button class="chip" data-meme-theme="dark">Dark Bar</button>
+                </div>
+              </div>
+              <div class="slider-row mt-8">
+                <span>Bar Height</span>
+                <input type="range" id="inputMemeBarHeight" min="12" max="40" value="22" />
+                <span class="val-badge" id="valMemeBarHeight">22%</span>
+              </div>
+              <div class="slider-row">
+                <span>Font Size</span>
+                <input type="range" id="inputMemeFontSize" min="18" max="72" value="36" />
+                <span class="val-badge" id="valMemeFontSize">36px</span>
+              </div>
+              <div class="inline-row mt-8">
+                <select id="selectMemeFont" class="select-input">
+                  <option value="cairo">Cairo / Arabic Bold</option>
+                  <option value="sans">Bold Sans</option>
+                  <option value="impact">Impact / Meme</option>
+                </select>
+                <select id="selectMemeDir" class="select-input compact">
+                  <option value="auto">Auto Dir</option>
+                  <option value="ltr">LTR</option>
+                  <option value="rtl">RTL</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label class="group-label">Media Bin</label>
+              <div class="media-bin-actions">
+                <button class="btn btn-secondary btn-sm w-full" id="btnAddMediaBin">+ Add Video / Image / Audio</button>
+              </div>
+              <div class="media-bin-list" id="mediaBinList">
+                <div class="empty-hint">No media imported yet.</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- TAB: CLIP (V1) -->
+          <section class="tab-pane" id="pane-clip">
+            <div class="empty-hint" id="noClipSelectedHint">Select a clip on track V1 to edit speed, crop, transform, and transitions.</div>
+            <div id="clipInspectorContent" class="hidden">
+              <div class="selected-banner" id="clipSelectedName">Clip</div>
+
+              <div class="control-group">
+                <label class="group-label">Quick Actions</label>
+                <div class="btn-grid cols-2">
+                  <button class="btn btn-secondary btn-sm" id="btnClipSplit">Split (S)</button>
+                  <button class="btn btn-secondary btn-sm" id="btnClipFreeze">Freeze Frame</button>
+                  <button class="btn btn-secondary btn-sm" id="btnClipDuplicate">Duplicate</button>
+                  <button class="btn btn-secondary btn-sm" id="btnClipDetachAudio">Detach Audio</button>
+                </div>
+                <div class="slider-row mt-8">
+                  <span>Freeze Hold</span>
+                  <input type="range" id="inputFreezeDuration" min="1" max="5" step="0.5" value="2" />
+                  <span class="val-badge" id="valFreezeDuration">2.0s</span>
+                </div>
+              </div>
+
+              <div class="control-group" id="imageDurationGroup" style="display:none">
+                <label class="group-label">Image Duration</label>
+                <div class="slider-row">
+                  <span>Duration</span>
+                  <input type="range" id="inputImageDuration" min="0.5" max="15" step="0.5" value="3" />
+                  <span class="val-badge" id="valImageDuration">3.0s</span>
+                </div>
+              </div>
+
+              <div class="control-group" id="clipSpeedGroup">
+                <label class="group-label">Playback Speed</label>
+                <div class="chip-grid cols-3" id="speedPresetGroup">
+                  <button class="chip" data-speed="0.25">0.25x</button>
+                  <button class="chip" data-speed="0.5">0.5x</button>
+                  <button class="chip" data-speed="0.75">0.75x</button>
+                  <button class="chip active" data-speed="1">1x</button>
+                  <button class="chip" data-speed="1.25">1.25x</button>
+                  <button class="chip" data-speed="1.5">1.5x</button>
+                  <button class="chip" data-speed="2">2x</button>
+                  <button class="chip" data-speed="3">3x</button>
+                  <button class="chip" data-speed="4">4x</button>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <div class="group-header">
+                  <label class="group-label">Interactive Crop</label>
+                  <button class="btn btn-sm btn-primary" id="btnToggleCropMode">Edit Crop</button>
+                </div>
+                <div class="chip-grid cols-3 mt-6" id="cropAspectGroup">
+                  <button class="chip active" data-crop-aspect="free">Free</button>
+                  <button class="chip" data-crop-aspect="original">Orig</button>
+                  <button class="chip" data-crop-aspect="16:9">16:9</button>
+                  <button class="chip" data-crop-aspect="9:16">9:16</button>
+                  <button class="chip" data-crop-aspect="1:1">1:1</button>
+                  <button class="chip" data-crop-aspect="4:5">4:5</button>
+                </div>
+                <button class="btn btn-ghost btn-xs mt-6" id="btnResetCrop">Reset Crop</button>
+              </div>
+
+              <div class="control-group">
+                <label class="group-label">Transform</label>
+                <div class="btn-grid cols-4">
+                  <button class="btn btn-secondary btn-xs" id="btnRotateCCW" title="Rotate 90° CCW">↺ 90°</button>
+                  <button class="btn btn-secondary btn-xs" id="btnRotateCW" title="Rotate 90° CW">↻ 90°</button>
+                  <button class="btn btn-secondary btn-xs" id="btnFlipH" title="Flip Horizontal">⇄ Flip</button>
+                  <button class="btn btn-secondary btn-xs" id="btnFlipV" title="Flip Vertical">⇅ Flip</button>
+                </div>
+                <div class="slider-row mt-8">
+                  <span>Scale</span>
+                  <input type="range" id="inputClipScale" min="0.5" max="3" step="0.02" value="1" />
+                  <span class="val-badge" id="valClipScale">100%</span>
+                </div>
+                <div class="slider-row">
+                  <span>Pan X</span>
+                  <input type="range" id="inputClipPanX" min="-0.5" max="0.5" step="0.01" value="0" />
+                  <span class="val-badge" id="valClipPanX">0%</span>
+                </div>
+                <div class="slider-row">
+                  <span>Pan Y</span>
+                  <input type="range" id="inputClipPanY" min="-0.5" max="0.5" step="0.01" value="0" />
+                  <span class="val-badge" id="valClipPanY">0%</span>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <label class="group-label">Transitions</label>
+                <div class="slider-row">
+                  <span>Fade In</span>
+                  <input type="range" id="inputClipFadeIn" min="0" max="1.5" step="0.1" value="0" />
+                  <span class="val-badge" id="valClipFadeIn">0.0s</span>
+                </div>
+                <div class="slider-row">
+                  <span>Fade Out</span>
+                  <input type="range" id="inputClipFadeOut" min="0" max="1.5" step="0.1" value="0" />
+                  <span class="val-badge" id="valClipFadeOut">0.0s</span>
+                </div>
+                <div class="slider-row">
+                  <span>Crossfade In</span>
+                  <input type="range" id="inputClipCrossfade" min="0" max="1" step="0.1" value="0" />
+                  <span class="val-badge" id="valClipCrossfade">0.0s</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- TAB: OVERLAYS (V2) -->
+          <section class="tab-pane" id="pane-overlays">
+            <div class="control-group">
+              <label class="group-label">Add Timed Overlay (V2)</label>
+              <div class="btn-grid cols-2">
+                <button class="btn btn-primary btn-sm" id="btnAddTextOverlay">+ Text / Meme</button>
+                <button class="btn btn-secondary btn-sm" id="btnAddImageOverlay">+ Sticker / PNG</button>
+                <button class="btn btn-secondary btn-sm" id="btnAddPipOverlay">+ PiP Video</button>
+                <button class="btn btn-secondary btn-sm" id="btnAddCensorOverlay">+ Blur / Censor</button>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label class="group-label">Quick Emoji Stickers</label>
+              <div class="emoji-grid" id="emojiPickerGrid">
+                <button class="emoji-btn" data-emoji="😂">😂</button>
+                <button class="emoji-btn" data-emoji="💀">💀</button>
+                <button class="emoji-btn" data-emoji="🔥">🔥</button>
+                <button class="emoji-btn" data-emoji="😭">😭</button>
+                <button class="emoji-btn" data-emoji="🗿">🗿</button>
+                <button class="emoji-btn" data-emoji="👀">👀</button>
+                <button class="emoji-btn" data-emoji="💯">💯</button>
+                <button class="emoji-btn" data-emoji="🤯">🤯</button>
+                <button class="emoji-btn" data-emoji="🤡">🤡</button>
+                <button class="emoji-btn" data-emoji="🚩">🚩</button>
+                <button class="emoji-btn" data-emoji="⚡">⚡</button>
+                <button class="emoji-btn" data-emoji="👑">👑</button>
+              </div>
+            </div>
+
+            <div class="empty-hint" id="noOverlaySelectedHint">Select an overlay on V2 or canvas to customize.</div>
+            <div id="overlayInspectorContent" class="hidden">
+              <div class="selected-banner" id="overlaySelectedName">Overlay</div>
+
+              <!-- Text-specific controls -->
+              <div id="overlayTextControls" class="hidden">
+                <div class="control-group">
+                  <label class="group-label">Caption Text (LTR & Arabic RTL)</label>
+                  <textarea id="inputOverlayText" class="text-input" rows="2" placeholder="Type caption..."></textarea>
+                  <div class="inline-row mt-8">
+                    <select id="selectOverlayFont" class="select-input">
+                      <option value="impact">Impact / Classic Meme</option>
+                      <option value="sans">Bold Sans</option>
+                      <option value="cairo">Cairo / Arabic Bold</option>
+                    </select>
+                    <select id="selectOverlayDir" class="select-input compact">
+                      <option value="auto">Auto</option>
+                      <option value="ltr">LTR</option>
+                      <option value="rtl">RTL</option>
+                    </select>
+                  </div>
+                  <div class="slider-row mt-8">
+                    <span>Font Size</span>
+                    <input type="range" id="inputOverlayFontSize" min="16" max="140" value="54" />
+                    <span class="val-badge" id="valOverlayFontSize">54px</span>
+                  </div>
+                  <div class="inline-row mt-8">
+                    <label class="mini-label">Fill <input type="color" id="inputOverlayColor" value="#ffffff" class="color-picker sm" /></label>
+                    <label class="mini-label">Stroke <input type="color" id="inputOverlayStrokeColor" value="#000000" class="color-picker sm" /></label>
+                    <label class="mini-label">Box <input type="color" id="inputOverlayBgColor" value="#000000" class="color-picker sm" /></label>
+                  </div>
+                  <div class="slider-row mt-8">
+                    <span>Outline</span>
+                    <input type="range" id="inputOverlayStrokeWidth" min="0" max="16" value="6" />
+                    <span class="val-badge" id="valOverlayStrokeWidth">6px</span>
+                  </div>
+                  <div class="inline-row mt-8">
+                    <label class="toggle-check"><input type="checkbox" id="chkOverlayShadow" checked /> Shadow</label>
+                    <label class="toggle-check"><input type="checkbox" id="chkOverlayBgPill" /> Pill Box</label>
+                    <label class="toggle-check"><input type="checkbox" id="chkOverlayUppercase" /> CAPS</label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PiP Chroma Key controls -->
+              <div id="overlayPipControls" class="hidden">
+                <div class="control-group">
+                  <label class="group-label">Green Screen (Chroma Key)</label>
+                  <div class="inline-row">
+                    <label class="toggle-check"><input type="checkbox" id="chkChromaEnabled" /> Enable Chroma Key</label>
+                    <input type="color" id="inputChromaColor" value="#00ff00" class="color-picker sm" />
+                  </div>
+                  <div class="slider-row mt-8">
+                    <span>Tolerance</span>
+                    <input type="range" id="inputChromaTolerance" min="5" max="120" value="48" />
+                    <span class="val-badge" id="valChromaTolerance">48</span>
+                  </div>
+                  <div class="slider-row">
+                    <span>Smoothness</span>
+                    <input type="range" id="inputChromaSmooth" min="0" max="50" value="14" />
+                    <span class="val-badge" id="valChromaSmooth">14</span>
+                  </div>
+                  <div class="slider-row">
+                    <span>PiP Volume</span>
+                    <input type="range" id="inputPipVolume" min="0" max="200" value="100" />
+                    <span class="val-badge" id="valPipVolume">100%</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Censor / Blur controls -->
+              <div id="overlayCensorControls" class="hidden">
+                <div class="control-group">
+                  <label class="group-label">Blur / Censor Style</label>
+                  <div class="chip-grid cols-3" id="censorModeGroup">
+                    <button class="chip active" data-censor="pixelate">Pixelate</button>
+                    <button class="chip" data-censor="blur">Blur</button>
+                    <button class="chip" data-censor="solid">Solid</button>
+                  </div>
+                  <div class="slider-row mt-8">
+                    <span>Intensity</span>
+                    <input type="range" id="inputCensorStrength" min="4" max="40" value="14" />
+                    <span class="val-badge" id="valCensorStrength">14</span>
+                  </div>
+                  <div class="inline-row mt-8">
+                    <label class="mini-label">Solid Color <input type="color" id="inputCensorColor" value="#000000" class="color-picker sm" /></label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Common Overlay Transform & Timing -->
+              <div class="control-group">
+                <label class="group-label">Overlay Style & Timing</label>
+                <div class="slider-row">
+                  <span>Opacity</span>
+                  <input type="range" id="inputOverlayOpacity" min="0" max="100" value="100" />
+                  <span class="val-badge" id="valOverlayOpacity">100%</span>
+                </div>
+                <div class="slider-row">
+                  <span>Rotation</span>
+                  <input type="range" id="inputOverlayRotation" min="-180" max="180" value="0" />
+                  <span class="val-badge" id="valOverlayRotation">0°</span>
+                </div>
+                <div class="slider-row">
+                  <span>Fade In</span>
+                  <input type="range" id="inputOverlayFadeIn" min="0" max="2" step="0.1" value="0" />
+                  <span class="val-badge" id="valOverlayFadeIn">0.0s</span>
+                </div>
+                <div class="slider-row">
+                  <span>Fade Out</span>
+                  <input type="range" id="inputOverlayFadeOut" min="0" max="2" step="0.1" value="0" />
+                  <span class="val-badge" id="valOverlayFadeOut">0.0s</span>
+                </div>
+                <div class="btn-grid cols-2 mt-8">
+                  <button class="btn btn-secondary btn-xs" id="btnOverlayCenter">Center</button>
+                  <button class="btn btn-danger btn-xs" id="btnOverlayDelete">Delete Overlay</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- TAB: AUDIO (A1 / A2 + V1 Audio) -->
+          <section class="tab-pane" id="pane-audio">
+            <div class="control-group">
+              <label class="group-label">Add Audio / SFX</label>
+              <div class="btn-grid cols-2">
+                <button class="btn btn-primary btn-sm" id="btnAddAudioA1">+ Add to A1</button>
+                <button class="btn btn-secondary btn-sm" id="btnAddAudioA2">+ SFX to A2</button>
+              </div>
+              <button class="btn btn-ghost btn-xs w-full mt-6" id="btnReplaceMainAudio">Replace Original Video Audio</button>
+            </div>
+
+            <div class="empty-hint" id="noAudioSelectedHint">Select a V1 clip or an A1/A2 audio clip to adjust volume (0–300%), mute, and fades.</div>
+            <div id="audioInspectorContent" class="hidden">
+              <div class="selected-banner" id="audioSelectedName">Audio</div>
+              <div class="control-group">
+                <div class="inline-row space-between">
+                  <label class="toggle-check"><input type="checkbox" id="chkAudioMuted" /> Mute Clip</label>
+                  <button class="btn btn-secondary btn-xs hidden" id="btnAudioDetachFromPanel">Detach to A1</button>
+                </div>
+                <div class="slider-row mt-8">
+                  <span>Volume</span>
+                  <input type="range" id="inputAudioVolume" min="0" max="300" value="100" />
+                  <span class="val-badge" id="valAudioVolume">100%</span>
+                </div>
+                <div class="slider-row">
+                  <span>Fade In</span>
+                  <input type="range" id="inputAudioFadeIn" min="0" max="3" step="0.1" value="0" />
+                  <span class="val-badge" id="valAudioFadeIn">0.0s</span>
+                </div>
+                <div class="slider-row">
+                  <span>Fade Out</span>
+                  <input type="range" id="inputAudioFadeOut" min="0" max="3" step="0.1" value="0" />
+                  <span class="val-badge" id="valAudioFadeOut">0.0s</span>
+                </div>
+                <div class="slider-row" id="audioTrackRow" style="display:none">
+                  <span>Track</span>
+                  <div class="chip-grid cols-2 flex-1" id="audioTrackSwitch">
+                    <button class="chip active" data-track="A1">A1</button>
+                    <button class="chip" data-track="A2">A2</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- TAB: FILTERS -->
+          <section class="tab-pane" id="pane-filters">
+            <div class="empty-hint" id="noFilterClipHint">Select a clip on V1 to apply GPU filters and presets.</div>
+            <div id="filterInspectorContent" class="hidden">
+              <div class="control-group">
+                <label class="group-label">1-Click Presets</label>
+                <div class="chip-grid cols-2" id="filterPresetGroup">
+                  <button class="chip active" data-filter="normal">Normal</button>
+                  <button class="chip" data-filter="bw">B&amp;W</button>
+                  <button class="chip" data-filter="deepfried">Deep Fried</button>
+                  <button class="chip" data-filter="warm">Warm</button>
+                  <button class="chip" data-filter="cool">Cool</button>
+                  <button class="chip" data-filter="invert">Invert</button>
+                  <button class="chip" data-filter="blur">Blur</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="group-label">Fine Adjustments</label>
+                <div class="slider-row">
+                  <span>Brightness</span>
+                  <input type="range" id="inputFilterBrightness" min="20" max="200" value="100" />
+                  <span class="val-badge" id="valFilterBrightness">100%</span>
+                </div>
+                <div class="slider-row">
+                  <span>Contrast</span>
+                  <input type="range" id="inputFilterContrast" min="20" max="250" value="100" />
+                  <span class="val-badge" id="valFilterContrast">100%</span>
+                </div>
+                <div class="slider-row">
+                  <span>Saturation</span>
+                  <input type="range" id="inputFilterSaturation" min="0" max="300" value="100" />
+                  <span class="val-badge" id="valFilterSaturation">100%</span>
+                </div>
+                <button class="btn btn-ghost btn-xs mt-8" id="btnResetFilters">Reset Filters</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <!-- CENTER INTERACTIVE CANVAS STAGE -->
+      <section class="stage-area" id="stageDropZone">
+        <div class="stage-viewport" id="stageViewport">
+          <canvas id="previewCanvas"></canvas>
+
+          <!-- Empty State Dropzone -->
+          <div class="stage-empty" id="stageEmpty">
+            <div class="drop-card" id="btnStageDropClick">
+              <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="url(#brandGrad)" stroke-width="2.2">
+                <rect x="6" y="10" width="36" height="28" rx="6" />
+                <path d="M20 19l10 5-10 5V19z" fill="url(#brandGrad)" stroke="none" />
+              </svg>
+              <div class="drop-title">Drop media files here</div>
+              <div class="drop-sub">Video, Image, or Audio — any format</div>
+              <button class="btn btn-primary btn-sm mt-8" type="button">Browse Files</button>
+            </div>
+          </div>
+
+          <!-- Crop Mode Floating Bar -->
+          <div class="crop-bar hidden" id="cropModeBar">
+            <span>Drag handles to crop</span>
+            <button class="btn btn-primary btn-xs" id="btnDoneCrop">Done</button>
+          </div>
+        </div>
+
+        <!-- Playback Controls Bar -->
+        <div class="playback-bar">
+          <div class="playback-left">
+            <span class="timecode-current" id="timecodeCurrent">00:00.00</span>
+            <span class="timecode-sep">/</span>
+            <span class="timecode-total" id="timecodeTotal">00:00.00</span>
+          </div>
+
+          <div class="playback-center">
+            <button class="btn btn-icon" id="btnJumpStart" title="Start (Home)">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M4 4h2v12H4V4zm11 0v12L7 10l8-6z"/></svg>
+            </button>
+            <button class="btn btn-icon" id="btnStepBack" title="Previous Frame (←)">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.5 5L7.5 10l5 5M6 5v10"/></svg>
+            </button>
+            <button class="btn btn-play" id="btnPlayPause" title="Play / Pause (Space)">
+              <svg id="iconPlay" viewBox="0 0 20 20" width="18" height="18" fill="currentColor"><path d="M6 4l11 6-11 6V4z"/></svg>
+              <svg id="iconPause" class="hidden" viewBox="0 0 20 20" width="18" height="18" fill="currentColor"><path d="M5 4h3.5v12H5V4zm6.5 0H15v12h-3.5V4z"/></svg>
+            </button>
+            <button class="btn btn-icon" id="btnStepForward" title="Next Frame (→)">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M7.5 5l5 5-5 5M14 5v10"/></svg>
+            </button>
+            <button class="btn btn-icon" id="btnJumpEnd" title="End (End)">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M14 4h2v12h-2V4zM5 4l8 6-8 6V4z"/></svg>
+            </button>
+          </div>
+
+          <div class="playback-right">
+            <span class="stage-meta" id="stageDimensionsMeta">—</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- BOTTOM MULTI-TRACK TIMELINE -->
+    <section class="timeline-dock">
+      <div class="timeline-toolbar">
+        <div class="tl-tools-left">
+          <button class="btn btn-ghost btn-xs" id="btnTlSplit" title="Split at Playhead (S)">
+            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3v14M4 7l3 3-3 3M16 7l-3 3 3 3"/></svg>
+            Split
+          </button>
+          <button class="btn btn-ghost btn-xs" id="btnTlFreeze" title="Insert Freeze Frame at Playhead">
+            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 2v16M2 10h16M4.5 4.5l11 11M15.5 4.5l-11 11"/></svg>
+            Freeze
+          </button>
+          <button class="btn btn-ghost btn-xs" id="btnTlDuplicate" title="Duplicate Selected (Ctrl+D)">Duplicate</button>
+          <button class="btn btn-ghost btn-xs" id="btnTlDetach" title="Detach Original Audio to A1">Detach Audio</button>
+          <button class="btn btn-ghost btn-xs danger" id="btnTlDelete" title="Delete Selected (Delete)">Delete</button>
+          <div class="v-sep"></div>
+          <label class="toggle-pill" title="Ripple Delete closes gaps automatically">
+            <input type="checkbox" id="chkRipple" checked />
+            <span>Ripple</span>
+          </label>
+          <label class="toggle-pill" title="Snap edges to playhead and clips">
+            <input type="checkbox" id="chkSnap" checked />
+            <span>Snap</span>
+          </label>
+        </div>
+
+        <div class="tl-tools-right">
+          <button class="btn btn-icon xs" id="btnZoomOut" title="Zoom Out">−</button>
+          <input type="range" id="inputTimelineZoom" min="20" max="240" value="70" class="zoom-slider" />
+          <button class="btn btn-icon xs" id="btnZoomIn" title="Zoom In">+</button>
+          <button class="btn btn-ghost btn-xs" id="btnZoomFit" title="Fit Timeline">Fit</button>
+        </div>
+      </div>
+
+      <div class="timeline-container">
+        <div class="track-headers">
+          <div class="ruler-corner">TRACKS</div>
+          <div class="track-header" data-track="V2">
+            <span class="track-badge v2">V2</span>
+            <span class="track-name">Overlays</span>
+          </div>
+          <div class="track-header" data-track="V1">
+            <span class="track-badge v1">V1</span>
+            <span class="track-name">Video</span>
+          </div>
+          <div class="track-header" data-track="A1">
+            <span class="track-badge a1">A1</span>
+            <span class="track-name">Audio 1</span>
+          </div>
+          <div class="track-header" data-track="A2">
+            <span class="track-badge a2">A2</span>
+            <span class="track-name">SFX / A2</span>
+          </div>
+        </div>
+
+        <div class="timeline-scroll" id="timelineScroll">
+          <div class="timeline-canvas-wrap" id="timelineTrackArea">
+            <canvas id="timelineRuler" height="28"></canvas>
+            <div class="track-lane" id="laneV2" data-lane="V2"></div>
+            <div class="track-lane" id="laneV1" data-lane="V1"></div>
+            <div class="track-lane" id="laneA1" data-lane="A1"></div>
+            <div class="track-lane" id="laneA2" data-lane="A2"></div>
+            <div class="playhead-line" id="playheadLine">
+              <div class="playhead-head"></div>
+            </div>
+            <div class="snap-guide hidden" id="timelineSnapGuide"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- SMART EXPORT & COMPRESSION MODAL -->
+  <div class="modal-backdrop hidden" id="exportModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <h2>Smart Export</h2>
+          <div class="mode-switch" id="exportModeSwitch">
+            <button class="mode-btn active" data-mode="video">Video</button>
+            <button class="mode-btn" data-mode="audio">Audio Only</button>
+          </div>
+        </div>
+        <button class="btn btn-icon" id="btnCloseExport" aria-label="Close">✕</button>
+      </div>
+
+      <!-- CONFIG VIEW -->
+      <div class="modal-body" id="exportConfigView">
+        <!-- Live Pre-Export Summary Strip -->
+        <div class="export-summary-strip">
+          <div class="summary-cell">
+            <span class="sum-label">Output</span>
+            <span class="sum-val" id="sumResolution">1080×1920</span>
+          </div>
+          <div class="summary-cell">
+            <span class="sum-label">Video Bitrate</span>
+            <span class="sum-val cyan" id="sumBitrate">1.45 Mbps</span>
+          </div>
+          <div class="summary-cell">
+            <span class="sum-label">Audio Spec</span>
+            <span class="sum-val" id="sumAudio">Opus 48k CBR</span>
+          </div>
+          <div class="summary-cell">
+            <span class="sum-label">Format</span>
+            <span class="sum-val" id="sumFormat">MP4 (H.264)</span>
+          </div>
+          <div class="summary-cell">
+            <span class="sum-label">Est. Size</span>
+            <span class="sum-val emerald" id="sumEstSize">—</span>
+          </div>
+        </div>
+
+        <!-- VIDEO EXPORT SETTINGS -->
+        <div id="videoExportOptions">
+          <div class="export-section">
+            <label class="group-label">Smart Compression Preset</label>
+            <div class="preset-cards" id="compressionPresetGroup">
+              <button class="preset-card" data-preset="lossless">
+                <strong>Visually Lossless</strong>
+                <span>bpp 0.13 • High fidelity</span>
+              </button>
+              <button class="preset-card active" data-preset="balanced">
+                <strong>Balanced</strong>
+                <span>bpp 0.08 • 720p cap</span>
+              </button>
+              <button class="preset-card" data-preset="smallest">
+                <strong>Smallest</strong>
+                <span>bpp 0.055 • 480p cap</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="export-grid-2">
+            <div class="export-section">
+              <label class="group-label">Resolution (Short Side)</label>
+              <div class="chip-grid cols-4" id="exportResGroup">
+                <button class="chip" data-res="original">Orig</button>
+                <button class="chip" data-res="1080">1080p</button>
+                <button class="chip active" data-res="720">720p</button>
+                <button class="chip" data-res="480">480p</button>
+              </div>
+            </div>
+
+            <div class="export-section">
+              <label class="group-label">Container & Codec</label>
+              <div class="chip-grid cols-3" id="exportContainerGroup">
+                <button class="chip active" data-container="mp4">MP4 H.264</button>
+                <button class="chip" data-container="webm">WebM VP9</button>
+                <button class="chip" data-container="mkv">MKV H.264</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="export-grid-2">
+            <div class="export-section">
+              <label class="group-label">Video Audio Codec</label>
+              <div class="chip-grid cols-2" id="exportVideoAudioCodecGroup">
+                <button class="chip active" data-acodec="opus">Opus (Default)</button>
+                <button class="chip" data-acodec="aac" id="btnCodecAac">AAC 128k</button>
+              </div>
+            </div>
+
+            <div class="export-section">
+              <label class="group-label">Hardware Engine</label>
+              <label class="toggle-card">
+                <input type="checkbox" id="chkGpuAccel" checked />
+                <span>GPU Acceleration (WebCodecs)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- AUDIO ONLY FORMAT SELECTOR -->
+        <div id="audioOnlyOptions" class="hidden">
+          <div class="export-section">
+            <label class="group-label">Audio Format</label>
+            <div class="chip-grid cols-5" id="audioOnlyFormatGroup">
+              <button class="chip active" data-aformat="opus">.opus</button>
+              <button class="chip" data-aformat="ogg">.ogg</button>
+              <button class="chip" data-aformat="mp3">.mp3</button>
+              <button class="chip" data-aformat="m4a">.m4a</button>
+              <button class="chip" data-aformat="wav">.wav</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- OPUS AUDIO SETTINGS (Shared for Video+Opus & Audio-Only Opus/OGG) -->
+        <div class="export-section opus-panel" id="opusSettingsPanel">
+          <label class="group-label">Opus Audio Parameters</label>
+          <div class="export-grid-3">
+            <div>
+              <span class="sub-label">Profile</span>
+              <select id="selectOpusProfile" class="select-input">
+                <option value="audio" selected>Opus (Audio)</option>
+                <option value="voip">Opus (VoIP)</option>
+                <option value="lowdelay">Opus (Low Delay)</option>
+              </select>
+            </div>
+            <div>
+              <span class="sub-label">Bitrate Mode</span>
+              <div class="chip-grid cols-2" id="opusModeGroup">
+                <button class="chip active" data-opus-mode="constant">CBR</button>
+                <button class="chip" data-opus-mode="variable">VBR</button>
+              </div>
+            </div>
+            <div>
+              <span class="sub-label">Channels</span>
+              <div class="chip-grid cols-2" id="opusChannelsGroup">
+                <button class="chip active" data-channels="2">Stereo</button>
+                <button class="chip" data-channels="1">Mono</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="export-grid-2 mt-10">
+            <div>
+              <div class="slider-row">
+                <span>Bitrate</span>
+                <input type="range" id="inputOpusBitrate" min="16" max="320" step="8" value="48" />
+                <span class="val-badge cyan" id="valOpusBitrate">48 kbps</span>
+              </div>
+            </div>
+            <div>
+              <div class="inline-row">
+                <span class="sub-label" style="margin:0;white-space:nowrap">Sample Rate</span>
+                <select id="selectOpusSampleRate" class="select-input">
+                  <option value="8000">8000 Hz</option>
+                  <option value="12000">12000 Hz</option>
+                  <option value="16000">16000 Hz</option>
+                  <option value="24000">24000 Hz</option>
+                  <option value="48000" selected>48000 Hz</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <input type="text" id="inputExportFilename" class="text-input filename-input" value="pulsecut-export" placeholder="File name" />
+          <button class="btn btn-export" id="btnStartRender">Render &amp; Export</button>
+        </div>
+      </div>
+
+      <!-- RENDER PROGRESS VIEW -->
+      <div class="modal-body hidden" id="exportProgressView">
+        <div class="progress-stage">
+          <div class="progress-ring-label" id="renderPercent">0%</div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="renderProgressBar" style="width:0%"></div>
+          </div>
+          <div class="progress-status" id="renderStatusText">Preparing pipeline...</div>
+          <div class="progress-telemetry" id="renderTelemetry">Engine: WebCodecs</div>
+          <button class="btn btn-danger btn-sm mt-12" id="btnCancelRender">Cancel</button>
+        </div>
+      </div>
+
+      <!-- POST-EXPORT VERIFICATION SCREEN -->
+      <div class="modal-body hidden" id="exportResultView">
+        <div class="result-stats">
+          <div class="stat-box">
+            <span class="stat-label">Original</span>
+            <strong class="stat-val" id="resOrigSize">—</strong>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Output</span>
+            <strong class="stat-val cyan" id="resOutSize">—</strong>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Saved</span>
+            <strong class="stat-val emerald" id="resSavedPct">—</strong>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Speed</span>
+            <strong class="stat-val" id="resSpeedBadge">—</strong>
+          </div>
+        </div>
+
+        <div class="result-preview-wrap" id="resultPreviewWrap">
+          <video id="resultVideoPlayer" controls playsinline class="result-player hidden"></video>
+          <audio id="resultAudioPlayer" controls class="result-audio-player hidden"></audio>
+        </div>
+
+        <div class="result-actions">
+          <button class="btn btn-export" id="btnDownloadResult">Download</button>
+          <button class="btn btn-secondary" id="btnBackToEditor">Back to Editor</button>
+          <button class="btn btn-ghost" id="btnResultNewProject">New Project</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notifications -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
