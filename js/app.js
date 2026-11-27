@@ -53,6 +53,7 @@ function toast(msg, type = 'info', ms = 2800) {
  * ============================================================================ */
 let _rafId = null;
 let _lastTickMs = 0;
+let _bufferHoldStartMs = 0;
 
 function startPlaybackLoop() {
   if (_rafId) return;
@@ -66,16 +67,29 @@ function startPlaybackLoop() {
       if (total <= 0) {
         setPlaying(false);
       } else {
-        store.ui.currentTime += dt;
-        if (store.ui.currentTime >= total) {
-          store.ui.currentTime = total;
-          setPlaying(false);
+        // Hold playhead briefly while mobile <video> finishes seeking across a split/deleted cut
+        const buffering = stage.isActiveVideoBuffering(store.ui.currentTime);
+        if (buffering) {
+          if (!_bufferHoldStartMs) _bufferHoldStartMs = now;
+        } else {
+          _bufferHoldStartMs = 0;
+        }
+        const shouldHold = buffering && (now - _bufferHoldStartMs) < 420;
+
+        if (!shouldHold) {
+          store.ui.currentTime += dt;
+          if (store.ui.currentTime >= total) {
+            store.ui.currentTime = total;
+            setPlaying(false);
+          }
         }
         stage.syncVideos(store.ui.currentTime, store.ui.isPlaying);
         audioEngine.syncAudioTracks(store.ui.currentTime, store.ui.isPlaying);
         updateTimecodeDisplay();
         timeline.updatePlayhead(true);
       }
+    } else {
+      _bufferHoldStartMs = 0;
     }
 
     stage.render(store.ui.currentTime);
@@ -90,10 +104,11 @@ function setPlaying(flag) {
   if (flag && store.ui.currentTime >= total - 0.02) {
     store.ui.currentTime = 0;
   }
+  _bufferHoldStartMs = 0;
   store.ui.isPlaying = flag;
   if (flag) {
     audioEngine.resume();
-    stage.syncVideos(store.ui.currentTime, true);
+    stage.unlockAndPlay(store.ui.currentTime);
     audioEngine.syncAudioTracks(store.ui.currentTime, true);
   } else {
     stage.pauseAllVideos();
@@ -547,19 +562,37 @@ function detachAudioFromClip(clip) {
 function deleteSelected() {
   const sel = store.ui.selected;
   if (!sel) return;
+  setPlaying(false);
   store.pushHistory();
 
+  let targetSeek = store.ui.currentTime;
+
   if (sel.type === 'v1') {
+    const idx = store.project.v1Clips.findIndex(c => c.id === sel.id);
+    const removed = idx >= 0 ? store.project.v1Clips[idx] : null;
     store.project.v1Clips = store.project.v1Clips.filter(c => c.id !== sel.id);
     if (store.ui.ripple) store.repackV1(true);
+
+    // Move playhead cleanly to the cut junction (or start of next surviving clip)
+    const nextClip = store.project.v1Clips[Math.min(idx, store.project.v1Clips.length - 1)] || null;
+    if (removed) {
+      targetSeek = nextClip ? nextClip.startTime : Math.max(0, store.getTotalDuration());
+    }
+    store.ui.currentTime = clamp(targetSeek, 0, Math.max(0, store.getTotalDuration()));
+    store.select(nextClip ? 'v1' : null, nextClip ? nextClip.id : null);
   } else if (sel.type === 'v2') {
     store.project.v2Overlays = store.project.v2Overlays.filter(o => o.id !== sel.id);
+    store.select(null, null);
   } else if (sel.type === 'audio') {
     store.project.audioClips = store.project.audioClips.filter(a => a.id !== sel.id);
+    store.select(null, null);
   }
 
-  store.select(null, null);
+  store.ui.currentTime = clamp(store.ui.currentTime, 0, Math.max(0, store.getTotalDuration()));
+  stage.syncVideos(store.ui.currentTime, false);
+  audioEngine.syncAudioTracks(store.ui.currentTime, false);
   store.emit('delete');
+  toast('Deleted clip', 'info', 1300);
 }
 
 /* ============================================================================
@@ -633,6 +666,15 @@ function syncUI(reason) {
     updateTimecodeDisplay();
     stage.render(store.ui.currentTime);
     return;
+  }
+
+  const maxDur = store.getTotalDuration();
+  if (store.ui.currentTime > maxDur && maxDur > 0) {
+    store.ui.currentTime = maxDur;
+  }
+  if (['split', 'trim', 'delete', 'freeze', 'duplicate', 'history', 'timeline-change', 'clip-speed'].includes(reason)) {
+    stage.syncVideos(store.ui.currentTime, store.ui.isPlaying);
+    audioEngine.syncAudioTracks(store.ui.currentTime, store.ui.isPlaying);
   }
 
   syncMediaBin();

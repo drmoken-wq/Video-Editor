@@ -432,8 +432,51 @@ function applyChromaKey(src, sw, sh, cfg) {
 /**
  * Shared WYSIWYG Frame Compositor — called identically by Preview & Export!
  */
+/**
+ * Returns active V1 clips at timeline timeSec using strict half-open intervals [start, end)
+ * so adjacent split clips never collide, while preserving intentional crossfades.
+ */
+export function getActiveV1ClipsAt(timeSec, v1Clips) {
+  if (!v1Clips || !v1Clips.length) return [];
+  const active = [];
+  const lastIdx = v1Clips.length - 1;
+  const eps = 0.0005;
+
+  for (let i = 0; i < v1Clips.length; i++) {
+    const clip = v1Clips[i];
+    const dur = store.getClipDuration(clip);
+    const start = clip.startTime || 0;
+    const end = start + dur;
+    const isLast = i === lastIdx;
+    const inRange = isLast
+      ? (timeSec >= start - eps && timeSec <= end + eps)
+      : (timeSec >= start - eps && timeSec < end - eps);
+
+    if (inRange) {
+      active.push({ clip, dur, relT: clamp(timeSec - start, 0, dur) });
+    }
+  }
+
+  // Edge fallback if timeSec sits right on a cut boundary
+  if (!active.length) {
+    for (let i = v1Clips.length - 1; i >= 0; i--) {
+      const clip = v1Clips[i];
+      const dur = store.getClipDuration(clip);
+      const start = clip.startTime || 0;
+      if (timeSec >= start - 0.015 && timeSec <= start + dur + 0.015) {
+        active.push({ clip, dur, relT: clamp(timeSec - start, 0, dur) });
+        break;
+      }
+    }
+  }
+
+  return active;
+}
+
 export function renderCompositeFrame(ctx, W, H, timeSec, project, mediaProvider) {
   ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = project.bgMode === 'solid' ? (project.bgColor || '#000000') : '#000000';
   ctx.fillRect(0, 0, W, H);
@@ -446,14 +489,8 @@ export function renderCompositeFrame(ctx, W, H, timeSec, project, mediaProvider)
     rh = Math.max(16, H - barH);
   }
 
-  // Find active V1 clips at timeSec (supports overlapping Crossfade!)
-  const activeV1 = [];
-  for (const clip of project.v1Clips) {
-    const dur = store.getClipDuration(clip);
-    if (timeSec >= clip.startTime - 0.001 && timeSec <= clip.startTime + dur + 0.001) {
-      activeV1.push({ clip, dur, relT: clamp(timeSec - clip.startTime, 0, dur) });
-    }
-  }
+  // Find active V1 clips at timeSec using strict half-open intervals [start, end)
+  const activeV1 = getActiveV1ClipsAt(timeSec, project.v1Clips);
 
   // Draw active V1 clip(s)
   for (let idx = 0; idx < activeV1.length; idx++) {
@@ -507,42 +544,110 @@ export class CanvasStage {
     this.ctx = canvasEl.getContext('2d');
     this.audioEngine = audioEngine;
 
-    /** @type {Map<string, HTMLVideoElement>} Keyed by clipId or overlayId */
+    /** @type {Map<string, HTMLVideoElement>} Keyed by warm asset-slot (`v1_<assetId>_0/1`) or PiP overlayId */
     this.videoPool = new Map();
+    /** @type {Map<string, string>} Maps active clipId -> poolKey */
+    this._activeSlotByClip = new Map();
+    /** Last-good-frame hold buffer per assetId so seeking across a split/cut NEVER flashes black */
+    this._lastFrameByAsset = new Map();
     this._dragState = null;
     this._snapX = false;
     this._snapY = false;
-    this._pendingSeek = new Set();
 
     this._bindCanvasPointerEvents();
   }
 
-  getOrCreateVideo(key, asset) {
+  getOrCreateVideo(poolKey, asset) {
     if (!asset || asset.kind !== 'video') return null;
-    let vid = this.videoPool.get(key);
+    let vid = this.videoPool.get(poolKey);
     if (!vid || vid.dataset.assetId !== asset.id) {
       vid = document.createElement('video');
-      vid.src = asset.objectUrl;
       vid.dataset.assetId = asset.id;
+      vid.dataset.poolKey = poolKey;
       vid.playsInline = true;
+      vid.setAttribute('playsinline', '');
+      vid.setAttribute('webkit-playsinline', '');
       vid.preload = 'auto';
       vid.crossOrigin = 'anonymous';
-      vid.muted = true; // Web Audio or direct gain handles playback cleanly
-      this.videoPool.set(key, vid);
+      vid.muted = true;
+      vid._desiredTime = null;
+
+      const applyPending = () => {
+        if (vid._desiredTime != null && vid.readyState >= 1) {
+          const target = clamp(vid._desiredTime, 0, Math.max(0, (vid.duration || asset.duration || 0) - 0.02));
+          if (Math.abs(vid.currentTime - target) > 0.03) {
+            try { vid.currentTime = target; } catch (_) {}
+          }
+          vid._desiredTime = null;
+        }
+        this.render(store.ui.currentTime);
+      };
+
+      vid.addEventListener('loadedmetadata', applyPending);
+      vid.addEventListener('loadeddata', applyPending);
+      vid.addEventListener('seeked', () => this.render(store.ui.currentTime));
+
+      vid.src = asset.objectUrl;
+      vid.load();
+      this.videoPool.set(poolKey, vid);
     }
     return vid;
   }
 
+  _getV1PoolKey(clip, slotIndex = 0) {
+    return `v1_${clip.assetId}_${slotIndex}`;
+  }
+
+  _seekVideoSafe(vid, targetTime, threshold = 0.03) {
+    if (!vid) return;
+    const maxDur = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : targetTime + 1;
+    const clamped = clamp(targetTime, 0, Math.max(0, maxDur - 0.02));
+    if (vid.readyState < 1) {
+      vid._desiredTime = clamped;
+      return;
+    }
+    vid._desiredTime = null;
+    if (!vid.seeking && Math.abs(vid.currentTime - clamped) > threshold) {
+      try { vid.currentTime = clamped; } catch (_) {}
+    } else if (vid.seeking && Math.abs(vid.currentTime - clamped) > Math.max(0.25, threshold * 2)) {
+      try { vid.currentTime = clamped; } catch (_) {}
+    }
+  }
+
+  _captureLastGoodFrame(assetId, vid) {
+    if (!vid || vid.readyState < 2 || !vid.videoWidth || !vid.videoHeight) return;
+    let c = this._lastFrameByAsset.get(assetId);
+    const scale = Math.min(1, 720 / Math.max(vid.videoWidth, vid.videoHeight));
+    const w = Math.max(2, Math.round(vid.videoWidth * scale));
+    const h = Math.max(2, Math.round(vid.videoHeight * scale));
+    if (!c) {
+      c = document.createElement('canvas');
+      this._lastFrameByAsset.set(assetId, c);
+    }
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+    }
+    try {
+      c.getContext('2d').drawImage(vid, 0, 0, w, h);
+    } catch (_) {}
+  }
+
   cleanupUnusedVideos() {
-    const activeKeys = new Set([
-      ...store.project.v1Clips.map(c => c.id),
-      ...store.project.v2Overlays.filter(o => o.type === 'pip').map(o => o.id),
-    ]);
+    const usedAssets = new Set(store.project.v1Clips.filter(c => c.kind === 'video').map(c => c.assetId));
+    const activePips = new Set(store.project.v2Overlays.filter(o => o.type === 'pip').map(o => o.id));
+
     for (const [key, vid] of this.videoPool.entries()) {
-      if (!activeKeys.has(key)) {
+      const keep = key.startsWith('v1_')
+        ? usedAssets.has(vid.dataset.assetId)
+        : activePips.has(key);
+      if (!keep) {
         try { vid.pause(); vid.removeAttribute('src'); vid.load(); } catch (_) {}
         this.videoPool.delete(key);
       }
+    }
+    for (const assetId of this._lastFrameByAsset.keys()) {
+      if (!usedAssets.has(assetId)) this._lastFrameByAsset.delete(assetId);
     }
   }
 
@@ -552,31 +657,55 @@ export class CanvasStage {
     }
   }
 
-  /** Syncs all active video elements to timeline time t (for playback or scrubbing) */
+  /** Called synchronously inside user Play gesture so mobile Chrome/Safari unlocks playback immediately */
+  unlockAndPlay(timeSec) {
+    this.syncVideos(timeSec, true);
+    for (const poolKey of this._activeSlotByClip.values()) {
+      const vid = this.videoPool.get(poolKey);
+      if (vid && vid.paused) {
+        vid.play().catch(() => {});
+      }
+    }
+  }
+
+  /** True when active V1 video is mid-seek across a cut boundary */
+  isActiveVideoBuffering(timeSec) {
+    const activeV1 = getActiveV1ClipsAt(timeSec, store.project.v1Clips);
+    for (const { clip } of activeV1) {
+      if (clip.kind !== 'video') continue;
+      const poolKey = this._activeSlotByClip.get(clip.id) || this._getV1PoolKey(clip, 0);
+      const vid = this.videoPool.get(poolKey);
+      if (vid && (vid.seeking || vid.readyState < 2)) return true;
+    }
+    return false;
+  }
+
+  /** Syncs all active video elements to timeline time t (reuses warm asset videos across splits!) */
   syncVideos(timeSec, isPlaying) {
     this.cleanupUnusedVideos();
 
-    // Sync V1 clips
-    for (const clip of store.project.v1Clips) {
+    const activeV1 = getActiveV1ClipsAt(timeSec, store.project.v1Clips);
+    const activePoolKeys = new Set();
+    const assetSlotUsage = new Map();
+    this._activeSlotByClip.clear();
+
+    for (const { clip, dur, relT } of activeV1) {
       if (clip.kind !== 'video') continue;
       const asset = store.getAsset(clip.assetId);
-      const vid = this.getOrCreateVideo(clip.id, asset);
+      if (!asset) continue;
+
+      const slotIdx = assetSlotUsage.get(asset.id) || 0;
+      assetSlotUsage.set(asset.id, slotIdx + 1);
+      const poolKey = this._getV1PoolKey(clip, slotIdx);
+      const vid = this.getOrCreateVideo(poolKey, asset);
       if (!vid) continue;
 
-      const dur = store.getClipDuration(clip);
-      const isActive = timeSec >= clip.startTime - 0.05 && timeSec <= clip.startTime + dur + 0.05;
+      activePoolKeys.add(poolKey);
+      this._activeSlotByClip.set(clip.id, poolKey);
 
-      if (!isActive) {
-        if (!vid.paused) vid.pause();
-        vid.muted = true;
-        continue;
-      }
-
-      const relT = clamp(timeSec - clip.startTime, 0, dur);
       const srcTime = clamp((clip.trimStart || 0) + relT * (clip.speed || 1), 0, Math.max(0, (asset.duration || dur) - 0.02));
       vid.playbackRate = clamp(clip.speed || 1, 0.25, 4);
 
-      // Audio gain for V1 preview (connected to AudioEngine for up to 300% boost & fade!)
       const shouldMute = clip.muted || clip.audioDetached || !isPlaying;
       let gainVal = shouldMute ? 0 : (clip.volume ?? 1);
       if (!shouldMute) {
@@ -589,26 +718,31 @@ export class CanvasStage {
       }
 
       if (this.audioEngine) {
-        this.audioEngine.attachMediaElement(clip.id, vid);
+        this.audioEngine.attachMediaElement(poolKey, vid);
         vid.muted = false;
-        this.audioEngine.setElementGain(clip.id, gainVal);
+        this.audioEngine.setElementGain(poolKey, gainVal);
       } else {
         vid.muted = shouldMute;
         vid.volume = clamp(gainVal, 0, 1);
       }
 
       if (isPlaying) {
-        if (Math.abs(vid.currentTime - srcTime) > 0.22 && vid.readyState >= 1) {
-          try { vid.currentTime = srcTime; } catch (_) {}
-        }
-        if (vid.paused && vid.readyState >= 2) {
+        this._seekVideoSafe(vid, srcTime, 0.22);
+        if (vid.paused) {
           vid.play().catch(() => {});
         }
       } else {
         if (!vid.paused) vid.pause();
-        if (vid.readyState >= 1 && Math.abs(vid.currentTime - srcTime) > 0.02) {
-          try { vid.currentTime = srcTime; } catch (_) {}
-        }
+        this._seekVideoSafe(vid, srcTime, 0.025);
+      }
+    }
+
+    // Pause inactive V1 pool videos
+    for (const [key, vid] of this.videoPool.entries()) {
+      if (key.startsWith('v1_') && !activePoolKeys.has(key)) {
+        if (!vid.paused) vid.pause();
+        if (this.audioEngine) this.audioEngine.setElementGain(key, 0);
+        else vid.muted = true;
       }
     }
 
@@ -619,7 +753,7 @@ export class CanvasStage {
       const vid = this.getOrCreateVideo(ov.id, asset);
       if (!vid) continue;
 
-      const isActive = timeSec >= ov.startTime && timeSec <= ov.endTime;
+      const isActive = timeSec >= ov.startTime && timeSec < ov.endTime;
       if (!isActive) {
         if (!vid.paused) vid.pause();
         if (this.audioEngine) this.audioEngine.setElementGain(ov.id, 0);
@@ -639,15 +773,11 @@ export class CanvasStage {
       }
 
       if (isPlaying) {
-        if (Math.abs(vid.currentTime - srcTime) > 0.22 && vid.readyState >= 1) {
-          try { vid.currentTime = srcTime; } catch (_) {}
-        }
-        if (vid.paused && vid.readyState >= 2) vid.play().catch(() => {});
+        this._seekVideoSafe(vid, srcTime, 0.22);
+        if (vid.paused) vid.play().catch(() => {});
       } else {
         if (!vid.paused) vid.pause();
-        if (vid.readyState >= 1 && Math.abs(vid.currentTime - srcTime) > 0.02) {
-          try { vid.currentTime = srcTime; } catch (_) {}
-        }
+        this._seekVideoSafe(vid, srcTime, 0.025);
       }
     }
   }
@@ -660,7 +790,8 @@ export class CanvasStage {
     if (clip.kind === 'image' || clip.kind === 'freeze') {
       src = asset.imageEl;
     } else {
-      const vid = this.getOrCreateVideo(clip.id, asset);
+      const poolKey = this._activeSlotByClip.get(clip.id) || this._getV1PoolKey(clip, 0);
+      const vid = this.getOrCreateVideo(poolKey, asset);
       const dur = store.getClipDuration(clip);
       const relT = clamp(timeSec - clip.startTime, 0, dur);
       const srcTime = clamp((clip.trimStart || 0) + relT * (clip.speed || 1), 0, Math.max(0, (asset.duration || dur) - 0.02));
@@ -679,7 +810,6 @@ export class CanvasStage {
   /** Renders preview canvas + interactive gizmos (selection handles, center snap guides, crop box) */
   render(timeSec = store.ui.currentTime) {
     const dims = store.getCanvasDimensions();
-    // Cap preview canvas internal resolution to 960px long side for crisp 60fps interactive editing
     const previewScale = Math.min(1, 960 / Math.max(dims.width, dims.height));
     const W = Math.max(2, Math.round(dims.width * previewScale));
     const H = Math.max(2, Math.round(dims.height * previewScale));
@@ -694,7 +824,15 @@ export class CanvasStage {
         const asset = store.getAsset(clip.assetId);
         if (!asset) return null;
         if (clip.kind === 'image' || clip.kind === 'freeze') return asset.imageEl;
-        const vid = this.getOrCreateVideo(clip.id, asset);
+        const poolKey = this._activeSlotByClip.get(clip.id) || this._getV1PoolKey(clip, 0);
+        const vid = this.getOrCreateVideo(poolKey, asset);
+        if (vid && vid.readyState >= 2 && !vid.seeking) {
+          this._captureLastGoodFrame(asset.id, vid);
+          return vid;
+        }
+        // Hold last decoded frame while seeking across a cut instead of flashing black!
+        const cached = this._lastFrameByAsset.get(asset.id);
+        if (cached) return cached;
         return vid && vid.readyState >= 2 ? vid : null;
       },
       getOverlayMedia: (ov) => {

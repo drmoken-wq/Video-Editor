@@ -46,9 +46,9 @@ export const FILTER_PRESETS = {
 };
 
 export const COMPRESSION_PRESETS = {
-  lossless: { bppFactor: 0.13,  maxShortSide: null, floorNormal: 1_200_000, floorSmall: 800_000 },
-  balanced: { bppFactor: 0.08,  maxShortSide: 720,  floorNormal: 750_000,   floorSmall: 500_000 },
-  smallest: { bppFactor: 0.055, maxShortSide: 480,  floorNormal: 450_000,   floorSmall: 450_000 },
+  lossless: { bppFactor: 0.16,  maxShortSide: null, floorHD: 2_200_000, floorNormal: 1_400_000, floorSmall: 900_000, ceilingRatio: 1.00 },
+  balanced: { bppFactor: 0.10,  maxShortSide: 720,  floorHD: 1_600_000, floorNormal: 1_050_000, floorSmall: 650_000, ceilingRatio: 0.85 },
+  smallest: { bppFactor: 0.065, maxShortSide: 480,  floorHD: 900_000,   floorNormal: 650_000,   floorSmall: 480_000, ceilingRatio: 0.75 },
 };
 
 export function createDefaultExportSettings() {
@@ -312,24 +312,27 @@ class Store {
     // FPS from primary video (clamped 24..60, default 30)
     const fps = primaryAsset?.fps ? clamp(Math.round(primaryAsset.fps), 24, 60) : 30;
 
-    // Smart BPP Bitrate
+    // Smart BPP Bitrate with resolution-aware visual quality floor
     let targetVideoBps = outW * outH * fps * presetCfg.bppFactor;
-    const floor = outShort <= 480 ? presetCfg.floorSmall : presetCfg.floorNormal;
+    const floor = outShort <= 480
+      ? presetCfg.floorSmall
+      : (outShort >= 1000 ? presetCfg.floorHD : presetCfg.floorNormal);
     targetVideoBps = Math.max(floor, targetVideoBps);
 
-    // Strict Bitrate Ceiling (Zero File Bloat):
-    // <= 80% of primary source video bitrate scaled by output-to-source pixel area ratio
+    // Anti-Bloat Ceiling for high-bitrate camera sources, while protecting already-small
+    // social videos from being crushed into blocky low-bitrate mush on mobile GPU encoders.
     const origW = primaryAsset?.width || outW;
     const origH = primaryAsset?.height || outH;
     const origBitrate = primaryAsset?.videoBitrate || primaryAsset?.bitrate || 0;
     if (origBitrate > 0) {
       const areaRatio = (outW * outH) / Math.max(1, origW * origH);
-      const ceiling = origBitrate * areaRatio * 0.80;
-      targetVideoBps = Math.min(targetVideoBps, ceiling);
+      const ceiling = origBitrate * areaRatio * (presetCfg.ceilingRatio ?? 0.85);
+      const safeCeiling = Math.max(floor, ceiling);
+      targetVideoBps = Math.min(targetVideoBps, safeCeiling);
     }
 
-    // Hard clamp [400 kbps, 20 Mbps]
-    targetVideoBps = clamp(Math.round(targetVideoBps), 400_000, 20_000_000);
+    // Hard clamp [450 kbps, 20 Mbps]
+    targetVideoBps = clamp(Math.round(targetVideoBps), 450_000, 20_000_000);
 
     // Audio bitrate calculation
     let audioBps = 48_000;

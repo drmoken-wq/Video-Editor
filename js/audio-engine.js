@@ -202,8 +202,9 @@ async function decodeAudioSegmentStreaming(asset, trimStart, trimEnd, targetSamp
     console.warn('[OfflineAudio] Mediabunny AudioBufferSink fallback:', err?.message || err);
   }
 
-  // 2. Fallback for standalone small audio files (< 60 MB)
-  if (asset.kind === 'audio' && asset.size <= 60 * 1024 * 1024) {
+  // 2. Fallback for standalone audio files (< 60 MB) or small videos (< 35 MB) if AudioBufferSink unavailable
+  const allowFallback = (asset.kind === 'audio' && asset.size <= 60 * 1024 * 1024) || (asset.kind === 'video' && asset.hasAudio && asset.size <= 35 * 1024 * 1024);
+  if (allowFallback) {
     try {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       const tmpCtx = new Ctx({ sampleRate: targetSampleRate || 48000 });
@@ -284,7 +285,7 @@ export async function renderOfflineAudioMix(project, assetsMap, options = {}) {
 
     src.connect(gain);
     gain.connect(limiter);
-    src.start(t0, 0, timelineDur + 0.02);
+    src.start(t0, 0, Math.max(0.01, timelineDur));
     scheduledAny = true;
   };
 
