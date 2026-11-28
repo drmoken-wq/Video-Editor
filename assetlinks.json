@@ -1,14 +1,8 @@
-[
-  {
-    "relation": [
-      "delegate_permission/common.handle_all_urls"
-    ],
-    "target": {
-      "namespace": "android_app",
-      "package_name": "PASTE_YOUR_PACKAGE_NAME_FROM_PWABUILDER_ZIP",
-      "sha256_cert_fingerprints": [
-        "PASTE_YOUR_SHA256_FINGERPRINT_FROM_PWABUILDER_ZIP"
-      ]
-    }
-  }
-]
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.vercel.video_editor_njhv47l10_drmoken_1606.twa",
+        "sha256_cert_fingerprints": ["66:BA:B7:ED:67:6F:CC:C4:7F:09:78:29:02:31:DD:E6:89:42:1F:C6:9A:DB:29:00:66:9E:B6:68:65:F2:A7:F8"]
+      }
+    }]
