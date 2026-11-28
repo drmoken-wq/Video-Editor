@@ -1,14 +1,8 @@
-[
-  {
-    "relation": [
-      "delegate_permission/common.handle_all_urls"
-    ],
-    "target": {
-      "namespace": "android_app",
-      "package_name": "PASTE_YOUR_PACKAGE_NAME_FROM_PWABUILDER_ZIP",
-      "sha256_cert_fingerprints": [
-        "PASTE_YOUR_SHA256_FINGERPRINT_FROM_PWABUILDER_ZIP"
-      ]
-    }
-  }
-]
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.vercel.video_editor_two_sandy.twa",
+        "sha256_cert_fingerprints": ["04:CC:EA:74:03:19:AF:58:D1:C7:39:A6:86:C6:DB:5A:AA:C0:D2:51:63:58:C0:B7:6E:54:2B:7C:4F:41:9E:7B"]
+      }
+    }]
