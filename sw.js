@@ -1,9 +1,12 @@
-const CACHE_NAME = 'pulsecut-shell-v4';
+const CACHE_NAME = 'pulsecut-shell-v6';
 const SHELL_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icon.svg',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/icon-maskable-512.png',
   '/css/styles.css',
   '/js/app.js',
   '/js/state.js',
